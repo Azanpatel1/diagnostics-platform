@@ -104,10 +104,13 @@ export function JobStatus({
       return;
     }
 
+    console.log("Extracting features with org:", organization.id);
+    
     setIsLoading(true);
     try {
       // Extraction now happens synchronously
       const result = await enqueueExtractFeatures(artifactId, organization.id);
+      console.log("Extraction result:", result);
       
       if (result.success && result.data) {
         // Reload the job to get full details

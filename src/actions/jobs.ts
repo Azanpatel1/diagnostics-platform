@@ -125,14 +125,28 @@ export async function enqueueExtractFeatures(artifactId: string, clerkOrgId?: st
   let orgId: string | null = null;
 
   try {
+    console.log("enqueueExtractFeatures called with:", { artifactId, clerkOrgId });
+    
     // Use client-provided orgId if available (workaround for Clerk session sync issues)
-    const authContext = clerkOrgId 
-      ? await getAuthContextWithOrgId(clerkOrgId)
-      : await getAuthContext();
+    let authContext;
+    try {
+      authContext = clerkOrgId 
+        ? await getAuthContextWithOrgId(clerkOrgId)
+        : await getAuthContext();
+    } catch (authError) {
+      console.error("Auth error:", authError);
+      return { 
+        success: false, 
+        error: authError instanceof Error ? authError.message : "Authentication failed" 
+      };
+    }
+    
     if (!authContext) {
       return { success: false, error: "Unauthorized" };
     }
 
+    console.log("Auth context obtained:", { orgId: authContext.orgId });
+    
     orgId = authContext.orgId;
     if (!orgId) {
       return { success: false, error: "No organization selected" };
