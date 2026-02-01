@@ -95,29 +95,47 @@ export function JobStatus({
 
     setIsLoading(true);
     try {
+      // Extraction now happens synchronously
       const result = await enqueueExtractFeatures(artifactId);
+      
       if (result.success && result.data) {
-        toast({
-          title: "Job queued",
-          description: "Feature extraction has been queued.",
-        });
-        // Reload the job status
+        // Reload the job to get full details
         const jobResult = await getJob(result.data.jobId);
         if (jobResult.success && jobResult.data) {
           setJob(jobResult.data);
-          setIsPolling(true);
+          
+          if (jobResult.data.status === "succeeded") {
+            toast({
+              title: "Features extracted",
+              description: `Successfully extracted ${result.data.featuresCount || 0} features.`,
+            });
+            onJobComplete?.();
+          } else if (jobResult.data.status === "failed") {
+            toast({
+              title: "Extraction failed",
+              description: jobResult.data.error || "Unknown error",
+              variant: "destructive",
+            });
+          }
         }
       } else {
         toast({
-          title: "Failed to queue job",
+          title: "Extraction failed",
           description: result.error,
           variant: "destructive",
         });
+        // Still try to load job status to show error
+        if (result.data?.jobId) {
+          const jobResult = await getJob(result.data.jobId);
+          if (jobResult.success && jobResult.data) {
+            setJob(jobResult.data);
+          }
+        }
       }
     } catch {
       toast({
         title: "Error",
-        description: "Failed to queue feature extraction",
+        description: "Failed to extract features",
         variant: "destructive",
       });
     } finally {

@@ -1,11 +1,28 @@
 "use server";
 
 import { db } from "@/db";
-import { jobs, rawArtifacts, samples } from "@/db/schema";
+import { jobs, rawArtifacts, samples, sampleFeatures, featureSets } from "@/db/schema";
 import { getAuthContext } from "@/lib/auth";
-import { enqueueJob, type JobPayload } from "@/lib/redis";
+import { extractTimeseriesCSV, extractEndpointJSON } from "@/lib/extractors";
+import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { eq, and, desc } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
+
+// Lazy-initialized S3 client
+let _s3Client: S3Client | null = null;
+
+function getS3Client(): S3Client {
+  if (!_s3Client) {
+    _s3Client = new S3Client({
+      region: process.env.AWS_REGION!,
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+      },
+    });
+  }
+  return _s3Client;
+}
 
 export interface JobWithDetails {
   id: string;
@@ -101,38 +118,44 @@ export async function listAllJobs(): Promise<{
 
 export async function enqueueExtractFeatures(artifactId: string): Promise<{
   success: boolean;
-  data?: { jobId: string };
+  data?: { jobId: string; featuresCount?: number };
   error?: string;
 }> {
+  const jobId = uuidv4();
+  let orgId: string | null = null;
+
   try {
     const authContext = await getAuthContext();
     if (!authContext) {
       return { success: false, error: "Unauthorized" };
     }
 
-    const { orgId } = authContext;
+    orgId = authContext.orgId;
     if (!orgId) {
       return { success: false, error: "No organization selected" };
     }
 
     // Verify artifact exists and belongs to org
-    const [artifact] = await db
-      .select()
-      .from(rawArtifacts)
-      .where(and(eq(rawArtifacts.id, artifactId), eq(rawArtifacts.orgId, orgId)));
+    const artifact = await db.query.rawArtifacts.findFirst({
+      where: and(eq(rawArtifacts.id, artifactId), eq(rawArtifacts.orgId, orgId)),
+    });
 
     if (!artifact) {
       return { success: false, error: "Artifact not found" };
     }
 
-    const jobId = uuidv4();
+    // Check schema version is supported
+    const schemaVersion = artifact.schemaVersion || "v1";
+    if (!["v1_timeseries_csv", "v1_endpoint_json"].includes(schemaVersion)) {
+      return { success: false, error: `Unsupported schema version: ${schemaVersion}` };
+    }
 
-    // Create job record
+    // Create job record (status: running)
     await db.insert(jobs).values({
       id: jobId,
       orgId,
       type: "extract_features",
-      status: "queued",
+      status: "running",
       input: {
         artifact_id: artifactId,
         feature_set: "core_v1",
@@ -141,21 +164,180 @@ export async function enqueueExtractFeatures(artifactId: string): Promise<{
       updatedAt: new Date(),
     });
 
-    // Enqueue to Redis
-    const payload: JobPayload = {
-      job_id: jobId,
-      type: "extract_features",
-      org_id: orgId,
-      artifact_id: artifactId,
-      feature_set: "core_v1",
-    };
+    // Download file from S3
+    const s3Client = getS3Client();
+    const command = new GetObjectCommand({
+      Bucket: process.env.AWS_S3_BUCKET!,
+      Key: artifact.storageKey,
+    });
 
-    await enqueueJob(payload);
+    const s3Response = await s3Client.send(command);
+    const fileContent = await s3Response.Body?.transformToString();
 
-    return { success: true, data: { jobId } };
+    if (!fileContent) {
+      throw new Error("Failed to download file from S3");
+    }
+
+    // Extract features based on schema
+    let extractionResult;
+    if (schemaVersion === "v1_timeseries_csv") {
+      extractionResult = extractTimeseriesCSV(fileContent);
+    } else {
+      extractionResult = extractEndpointJSON(fileContent);
+    }
+
+    if (!extractionResult.success) {
+      // Update job as failed
+      await db
+        .update(jobs)
+        .set({
+          status: "failed",
+          error: extractionResult.error,
+          updatedAt: new Date(),
+        })
+        .where(eq(jobs.id, jobId));
+
+      return { success: false, data: { jobId }, error: extractionResult.error };
+    }
+
+    // Get or create feature set
+    let featureSet = await db.query.featureSets.findFirst({
+      where: and(eq(featureSets.orgId, orgId), eq(featureSets.name, "core_v1")),
+    });
+
+    if (!featureSet) {
+      const [newFeatureSet] = await db
+        .insert(featureSets)
+        .values({
+          orgId,
+          name: "core_v1",
+          version: "1.0.0",
+          featureList: {
+            timeseries: [
+              "baseline_mean", "baseline_std", "y_max", "y_min",
+              "t_at_max", "auc", "slope_early", "t_halfmax", "snr"
+            ],
+            endpoint: ["endpoint_value"],
+            global: ["num_channels", "signal_quality_flag"],
+          },
+        })
+        .returning();
+      featureSet = newFeatureSet;
+    }
+
+    // Get sample ID from artifact
+    let sampleId = artifact.sampleId;
+
+    // If no sample linked, try to find one from the experiment
+    if (!sampleId && artifact.experimentId) {
+      const sample = await db.query.samples.findFirst({
+        where: and(
+          eq(samples.experimentId, artifact.experimentId),
+          eq(samples.orgId, orgId)
+        ),
+      });
+      sampleId = sample?.id || null;
+    }
+
+    // If still no sample, create one
+    if (!sampleId && artifact.experimentId) {
+      const [newSample] = await db
+        .insert(samples)
+        .values({
+          orgId,
+          experimentId: artifact.experimentId,
+          sampleLabel: `Sample-${Date.now()}`,
+        })
+        .returning();
+      sampleId = newSample.id;
+
+      // Update artifact with sample ID
+      await db
+        .update(rawArtifacts)
+        .set({ sampleId })
+        .where(eq(rawArtifacts.id, artifactId));
+    }
+
+    if (!sampleId) {
+      throw new Error("Could not determine sample for features");
+    }
+
+    // Upsert sample features
+    const existingFeature = await db.query.sampleFeatures.findFirst({
+      where: and(
+        eq(sampleFeatures.sampleId, sampleId),
+        eq(sampleFeatures.featureSetId, featureSet.id)
+      ),
+    });
+
+    let sampleFeatureId: string;
+
+    if (existingFeature) {
+      // Update existing
+      await db
+        .update(sampleFeatures)
+        .set({
+          features: extractionResult.features,
+          artifactId,
+          computedAt: new Date(),
+        })
+        .where(eq(sampleFeatures.id, existingFeature.id));
+      sampleFeatureId = existingFeature.id;
+    } else {
+      // Insert new
+      const [newFeature] = await db
+        .insert(sampleFeatures)
+        .values({
+          orgId,
+          sampleId,
+          featureSetId: featureSet.id,
+          artifactId,
+          features: extractionResult.features,
+          computedAt: new Date(),
+        })
+        .returning();
+      sampleFeatureId = newFeature.id;
+    }
+
+    // Update job as succeeded
+    const featuresCount = Object.keys(extractionResult.features || {}).length;
+    await db
+      .update(jobs)
+      .set({
+        status: "succeeded",
+        output: {
+          features_count: featuresCount,
+          sample_feature_id: sampleFeatureId,
+        },
+        updatedAt: new Date(),
+      })
+      .where(eq(jobs.id, jobId));
+
+    return { success: true, data: { jobId, featuresCount } };
   } catch (error) {
-    console.error("Error enqueueing extraction:", error);
-    return { success: false, error: "Failed to enqueue extraction" };
+    console.error("Error extracting features:", error);
+
+    // Update job as failed if we have an orgId
+    if (orgId) {
+      try {
+        await db
+          .update(jobs)
+          .set({
+            status: "failed",
+            error: error instanceof Error ? error.message : "Unknown error",
+            updatedAt: new Date(),
+          })
+          .where(eq(jobs.id, jobId));
+      } catch {
+        // Ignore update errors
+      }
+    }
+
+    return { 
+      success: false, 
+      data: { jobId },
+      error: error instanceof Error ? error.message : "Failed to extract features" 
+    };
   }
 }
 

@@ -8,10 +8,9 @@ A secure, multi-tenant web application for managing diagnostic experiments, samp
 - **Authentication**: Clerk (with Organizations)
 - **Database**: Neon PostgreSQL + Drizzle ORM
 - **File Storage**: AWS S3
-- **Job Queue**: Redis (Upstash)
-- **Worker**: Python FastAPI (Docker)
+- **Feature Extraction**: Synchronous (TypeScript)
 - **UI**: Tailwind CSS + shadcn/ui
-- **Language**: TypeScript + Python
+- **Language**: TypeScript
 
 ## Features
 
@@ -26,8 +25,7 @@ A secure, multi-tenant web application for managing diagnostic experiments, samp
 ### Phase 2: Deterministic Feature Engineering
 - Automated feature extraction from raw artifacts
 - Support for v1_timeseries_csv and v1_endpoint_json schemas
-- Redis-based job queue for async processing
-- Dockerized Python worker for feature computation
+- Synchronous feature extraction (no external worker required)
 - Deterministic feature extraction (same input → same output)
 - Per-channel and global feature computation
 
@@ -36,11 +34,9 @@ A secure, multi-tenant web application for managing diagnostic experiments, samp
 ### Prerequisites
 
 - Node.js 18+
-- Docker Desktop (for running the Python worker)
 - A Clerk account with Organizations enabled
 - A Neon PostgreSQL database
 - An AWS S3 bucket
-- An Upstash Redis database (for job queue)
 
 ### Environment Setup
 
@@ -72,10 +68,6 @@ AWS_ACCESS_KEY_ID=xxx
 AWS_SECRET_ACCESS_KEY=xxx
 AWS_REGION=us-east-1
 AWS_S3_BUCKET=your-bucket-name
-
-# Upstash Redis (for job queue)
-UPSTASH_REDIS_REST_URL=https://xxx.upstash.io
-UPSTASH_REDIS_REST_TOKEN=xxx
 ```
 
 ### Installation
@@ -124,12 +116,6 @@ npm run db:push
 
 3. Create an IAM user with S3 access and add credentials to `.env.local`
 
-### Upstash Redis Setup
-
-1. Create an account at [upstash.com](https://upstash.com)
-2. Create a new Redis database (free tier works)
-3. Copy the REST URL and Token to your `.env.local`
-
 ### Development
 
 Start the Next.js development server:
@@ -140,25 +126,7 @@ npm run dev
 
 Visit [http://localhost:3000](http://localhost:3000)
 
-### Running the Feature Worker
-
-The Python worker processes feature extraction jobs. Run it with Docker:
-
-```bash
-# Build and start the worker
-docker-compose up --build
-
-# Or run in the background
-docker-compose up -d --build
-```
-
-The worker will:
-- Poll the Redis queue for jobs
-- Download artifacts from S3
-- Extract features based on schema type
-- Store results in Neon PostgreSQL
-
-Worker health check: [http://localhost:8000/health](http://localhost:8000/health)
+Feature extraction happens synchronously when you click "Extract Features" on an artifact - no external worker or Redis required.
 
 ## Project Structure
 
@@ -188,28 +156,11 @@ src/
 │   └── index.ts           # Database client
 ├── lib/                   # Utilities
 │   ├── auth.ts            # Auth context helper
-│   ├── redis.ts           # Upstash Redis client (Phase 2)
+│   ├── extractors.ts      # Feature extraction algorithms (Phase 2)
 │   ├── s3.ts              # S3 utilities
 │   ├── utils.ts           # General utilities
 │   └── validations.ts     # Zod schemas
 └── middleware.ts          # Clerk middleware
-
-worker/                     # Python feature worker (Phase 2)
-├── Dockerfile
-├── requirements.txt
-└── app/
-    ├── main.py            # FastAPI app
-    ├── config.py          # Environment config
-    ├── consumer.py        # Redis queue consumer
-    ├── db.py              # PostgreSQL connection
-    ├── s3.py              # S3 file download
-    └── extractors/        # Feature extraction logic
-        ├── base.py
-        ├── core_v1.py     # Deterministic feature computation
-        ├── timeseries_csv.py
-        └── endpoint_json.py
-
-docker-compose.yml          # Docker setup for worker
 ```
 
 ## Security
