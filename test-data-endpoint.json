@@ -1,0 +1,15 @@
+{
+  "channels": [
+    {"channel": "IL6", "value": 123.4},
+    {"channel": "CRP", "value": 55.1},
+    {"channel": "TNFa", "value": 87.3},
+    {"channel": "IL10", "value": 42.8},
+    {"channel": "IFNg", "value": 156.2}
+  ],
+  "metadata": {
+    "instrument_id": "NEXT-001",
+    "temperature_c": 23.5,
+    "operator": "Dr. Smith",
+    "run_date": "2026-01-28"
+  }
+}

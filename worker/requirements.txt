@@ -1,0 +1,23 @@
+# FastAPI and server
+fastapi==0.109.2
+uvicorn[standard]==0.27.1
+
+# Database
+psycopg2-binary==2.9.9
+sqlalchemy==2.0.25
+
+# AWS S3
+boto3==1.34.34
+
+# Redis (Upstash)
+upstash-redis==1.0.0
+
+# Data processing
+pandas==2.2.0
+numpy==1.26.4
+scipy==1.12.0
+
+# Utilities
+python-dotenv==1.0.1
+pydantic==2.6.1
+pydantic-settings==2.1.0

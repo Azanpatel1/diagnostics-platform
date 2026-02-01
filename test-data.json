@@ -1,0 +1,19 @@
+{
+  "experiment": "Blood Panel Test",
+  "samples": [
+    {
+      "id": "S001",
+      "measurements": [
+        { "type": "glucose", "value": 95.5, "unit": "mg/dL" },
+        { "type": "cholesterol", "value": 180.2, "unit": "mg/dL" }
+      ]
+    },
+    {
+      "id": "S002", 
+      "measurements": [
+        { "type": "glucose", "value": 102.3, "unit": "mg/dL" },
+        { "type": "cholesterol", "value": 195.8, "unit": "mg/dL" }
+      ]
+    }
+  ]
+}

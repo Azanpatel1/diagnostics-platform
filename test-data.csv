@@ -1,0 +1,6 @@
+sample_id,measurement,value,unit,timestamp
+S001,glucose,95.5,mg/dL,2026-01-28T10:00:00Z
+S001,cholesterol,180.2,mg/dL,2026-01-28T10:00:00Z
+S002,glucose,102.3,mg/dL,2026-01-28T11:00:00Z
+S002,cholesterol,195.8,mg/dL,2026-01-28T11:00:00Z
+S003,glucose,88.1,mg/dL,2026-01-28T12:00:00Z
