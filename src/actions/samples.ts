@@ -213,10 +213,10 @@ export async function createSample(input: CreateSampleInput, clerkOrgId?: string
       .values({
         orgId,
         experimentId: input.experimentId,
-        sampleLabel: input.sampleLabel || null,
-        patientPseudonym: input.patientPseudonym || null,
-        matrixType: input.matrixType || null,
-        collectedAt: input.collectedAt || null,
+        sampleLabel: input.sampleLabel || `Sample-${Date.now()}`,
+        patientPseudonym: input.patientPseudonym || undefined,
+        matrixType: input.matrixType || undefined,
+        collectedAt: input.collectedAt || undefined,
       })
       .returning({ id: samples.id });
 
