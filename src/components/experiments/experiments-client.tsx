@@ -159,7 +159,7 @@ export function ExperimentsClient() {
             <div>
               <p className="text-sm font-medium text-muted-foreground">Total Samples</p>
               <p className="text-2xl font-bold">
-                {experiments.reduce((acc, e) => acc + e.samplesCount, 0)}
+                {experiments.reduce((acc, e) => acc + e.sampleCount, 0)}
               </p>
             </div>
           </CardContent>
@@ -280,7 +280,7 @@ export function ExperimentsClient() {
                         )}
                       </TableCell>
                       <TableCell className="text-center">
-                        <Badge variant="secondary">{experiment.samplesCount}</Badge>
+                        <Badge variant="secondary">{experiment.sampleCount}</Badge>
                       </TableCell>
                       <TableCell className="text-center">
                         <Badge variant="secondary">{experiment.artifactsCount}</Badge>
