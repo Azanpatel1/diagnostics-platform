@@ -42,9 +42,9 @@ import { JobHistory } from "@/components/jobs/job-history";
 import { Breadcrumbs } from "@/components/layout/breadcrumbs";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import { getSampleFeatures } from "@/actions/features";
-import { listJobsForSample } from "@/actions/jobs";
+import { listJobsForSample, JobWithDetails } from "@/actions/jobs";
 import type { SampleDetail as SampleDetailType } from "@/actions/samples";
-import type { SampleFeature, Job } from "@/db/schema";
+import type { SampleFeature } from "@/db/schema";
 
 interface SampleDetailProps {
   sample: SampleDetailType;
@@ -53,7 +53,7 @@ interface SampleDetailProps {
 export function SampleDetail({ sample }: SampleDetailProps) {
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [features, setFeatures] = useState<SampleFeature[]>([]);
-  const [jobs, setJobs] = useState<Job[]>([]);
+  const [jobs, setJobs] = useState<JobWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Load features and jobs

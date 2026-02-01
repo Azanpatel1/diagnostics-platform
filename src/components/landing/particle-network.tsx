@@ -43,7 +43,7 @@ export function ParticleNetwork() {
   const antigensRef = useRef<Antigen[]>([]);
   const substratesRef = useRef<Substrate[]>([]);
   const mouseRef = useRef({ x: -1000, y: -1000 });
-  const animationRef = useRef<number>();
+  const animationRef = useRef<number | undefined>(undefined);
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
 

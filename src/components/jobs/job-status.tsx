@@ -4,9 +4,8 @@ import { useEffect, useState } from "react";
 import { Loader2, CheckCircle2, XCircle, Clock, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { enqueueExtractFeatures, getJob, getLatestJobForArtifact } from "@/actions/jobs";
+import { enqueueExtractFeatures, getJob, getLatestJobForArtifact, JobWithDetails } from "@/actions/jobs";
 import { useToast } from "@/hooks/use-toast";
-import { Job } from "@/db/schema";
 
 interface JobStatusProps {
   artifactId: string;
@@ -44,7 +43,7 @@ export function JobStatus({
   onJobComplete,
 }: JobStatusProps) {
   const { toast } = useToast();
-  const [job, setJob] = useState<Job | null>(null);
+  const [job, setJob] = useState<JobWithDetails | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isPolling, setIsPolling] = useState(false);
 
@@ -52,10 +51,10 @@ export function JobStatus({
   useEffect(() => {
     async function loadJob() {
       const result = await getLatestJobForArtifact(artifactId);
-      if (result.success) {
-        setJob(result.job);
+      if (result.success && result.data) {
+        setJob(result.data);
         // Start polling if job is in progress
-        if (result.job && ["queued", "running"].includes(result.job.status)) {
+        if (["queued", "running"].includes(result.data.status)) {
           setIsPolling(true);
         }
       }
@@ -69,11 +68,11 @@ export function JobStatus({
 
     const interval = setInterval(async () => {
       const result = await getJob(job.id);
-      if (result.success) {
-        setJob(result.job);
-        if (["succeeded", "failed"].includes(result.job.status)) {
+      if (result.success && result.data) {
+        setJob(result.data);
+        if (["succeeded", "failed"].includes(result.data.status)) {
           setIsPolling(false);
-          if (result.job.status === "succeeded") {
+          if (result.data.status === "succeeded") {
             onJobComplete?.();
           }
         }
@@ -97,15 +96,15 @@ export function JobStatus({
     setIsLoading(true);
     try {
       const result = await enqueueExtractFeatures(artifactId);
-      if (result.success) {
+      if (result.success && result.data) {
         toast({
           title: "Job queued",
           description: "Feature extraction has been queued.",
         });
         // Reload the job status
-        const jobResult = await getJob(result.jobId);
-        if (jobResult.success) {
-          setJob(jobResult.job);
+        const jobResult = await getJob(result.data.jobId);
+        if (jobResult.success && jobResult.data) {
+          setJob(jobResult.data);
           setIsPolling(true);
         }
       } else {

@@ -36,12 +36,13 @@ export function SampleForm({ experimentId, onSuccess }: SampleFormProps) {
     setIsLoading(true);
 
     const formData = new FormData(event.currentTarget);
+    const collectedAtStr = formData.get("collectedAt") as string;
     const data = {
       experimentId,
       sampleLabel: formData.get("sampleLabel") as string,
       patientPseudonym: formData.get("patientPseudonym") as string,
       matrixType: formData.get("matrixType") as string,
-      collectedAt: formData.get("collectedAt") as string,
+      collectedAt: collectedAtStr ? new Date(collectedAtStr) : undefined,
     };
 
     const result = await createSample(data, organization.id);

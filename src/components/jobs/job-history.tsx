@@ -11,10 +11,10 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { formatDateTime } from "@/lib/utils";
-import type { Job } from "@/db/schema";
+import type { JobWithDetails } from "@/actions/jobs";
 
 interface JobHistoryProps {
-  jobs: Job[];
+  jobs: JobWithDetails[];
 }
 
 const STATUS_CONFIG: Record<string, { icon: typeof Clock; color: string; label: string; animate?: boolean }> = {

@@ -283,7 +283,7 @@ export function ExperimentsClient() {
                         <Badge variant="secondary">{experiment.sampleCount}</Badge>
                       </TableCell>
                       <TableCell className="text-center">
-                        <Badge variant="secondary">{experiment.artifactsCount}</Badge>
+                        <Badge variant="secondary">{experiment.artifactCount}</Badge>
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {new Date(experiment.createdAt).toLocaleDateString()}

@@ -18,10 +18,10 @@ import { JobStatus } from "@/components/jobs/job-status";
 interface Artifact {
   id: string;
   fileName: string;
-  fileType: string;
-  fileSize: string | null;
-  sha256: string;
-  schemaVersion: string;
+  fileType: string | null;
+  fileSize?: string | null;
+  sha256?: string;
+  schemaVersion: string | null;
   createdAt: Date;
 }
 
@@ -98,7 +98,7 @@ export function ArtifactList({
               <TableCell>
                 <JobStatus
                   artifactId={artifact.id}
-                  artifactSchemaVersion={artifact.schemaVersion}
+                  artifactSchemaVersion={artifact.schemaVersion || "v1"}
                   onJobComplete={onFeatureExtracted}
                 />
               </TableCell>
