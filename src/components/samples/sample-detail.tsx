@@ -43,14 +43,15 @@ import { Breadcrumbs } from "@/components/layout/breadcrumbs";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import { getSampleFeatures } from "@/actions/features";
 import { listJobsForSample, JobWithDetails } from "@/actions/jobs";
-import type { SampleDetail as SampleDetailType } from "@/actions/samples";
+import { getSample, type SampleDetail as SampleDetailType } from "@/actions/samples";
 import type { SampleFeature } from "@/db/schema";
 
 interface SampleDetailProps {
   sample: SampleDetailType;
 }
 
-export function SampleDetail({ sample }: SampleDetailProps) {
+export function SampleDetail({ sample: initialSample }: SampleDetailProps) {
+  const [sample, setSample] = useState(initialSample);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [features, setFeatures] = useState<SampleFeature[]>([]);
   const [jobs, setJobs] = useState<JobWithDetails[]>([]);
@@ -86,6 +87,17 @@ export function SampleDetail({ sample }: SampleDetailProps) {
     const jobsResult = await listJobsForSample(sample.id);
     if (jobsResult.success) {
       setJobs(jobsResult.jobs);
+    }
+  }
+
+  async function handleUploadSuccess() {
+    // Close the dialog
+    setUploadDialogOpen(false);
+    
+    // Refresh sample data to get the new artifact
+    const result = await getSample(sample.id);
+    if (result.success && result.data) {
+      setSample(result.data);
     }
   }
 
@@ -283,7 +295,7 @@ export function SampleDetail({ sample }: SampleDetailProps) {
                   <FileUpload
                     experimentId={sample.experimentId}
                     sampleId={sample.id}
-                    onSuccess={() => setUploadDialogOpen(false)}
+                    onSuccess={handleUploadSuccess}
                   />
                 </DialogContent>
               </Dialog>

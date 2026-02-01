@@ -45,15 +45,38 @@ import { FileUpload } from "@/components/artifacts/file-upload";
 import { ArtifactList } from "@/components/artifacts/artifact-list";
 import { Breadcrumbs } from "@/components/layout/breadcrumbs";
 import { formatDate, formatDateTime } from "@/lib/utils";
-import type { ExperimentDetail as ExperimentDetailType } from "@/actions/experiments";
+import { getExperiment, type ExperimentDetail as ExperimentDetailType } from "@/actions/experiments";
 
 interface ExperimentDetailProps {
   experiment: ExperimentDetailType;
 }
 
-export function ExperimentDetail({ experiment }: ExperimentDetailProps) {
+export function ExperimentDetail({ experiment: initialExperiment }: ExperimentDetailProps) {
+  const [experiment, setExperiment] = useState(initialExperiment);
   const [sampleDialogOpen, setSampleDialogOpen] = useState(false);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+
+  async function handleUploadSuccess() {
+    // Close the dialog
+    setUploadDialogOpen(false);
+    
+    // Refresh experiment data to get the new artifact
+    const result = await getExperiment(experiment.id);
+    if (result.success && result.data) {
+      setExperiment(result.data);
+    }
+  }
+
+  async function handleSampleCreated() {
+    // Close the dialog
+    setSampleDialogOpen(false);
+    
+    // Refresh experiment data to get the new sample
+    const result = await getExperiment(experiment.id);
+    if (result.success && result.data) {
+      setExperiment(result.data);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -227,7 +250,7 @@ export function ExperimentDetail({ experiment }: ExperimentDetailProps) {
               </DialogHeader>
               <SampleForm
                 experimentId={experiment.id}
-                onSuccess={() => setSampleDialogOpen(false)}
+                onSuccess={handleSampleCreated}
               />
             </DialogContent>
           </Dialog>
@@ -334,7 +357,7 @@ export function ExperimentDetail({ experiment }: ExperimentDetailProps) {
               <FileUpload
                 experimentId={experiment.id}
                 samples={experiment.samples}
-                onSuccess={() => setUploadDialogOpen(false)}
+                onSuccess={handleUploadSuccess}
               />
             </DialogContent>
           </Dialog>
