@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Loader2, CheckCircle2, XCircle, Clock, Play } from "lucide-react";
+import { useOrganization } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { enqueueExtractFeatures, getJob, getLatestJobForArtifact, JobWithDetails } from "@/actions/jobs";
@@ -43,6 +44,7 @@ export function JobStatus({
   onJobComplete,
 }: JobStatusProps) {
   const { toast } = useToast();
+  const { organization } = useOrganization();
   const [job, setJob] = useState<JobWithDetails | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isPolling, setIsPolling] = useState(false);
@@ -93,10 +95,19 @@ export function JobStatus({
       return;
     }
 
+    if (!organization?.id) {
+      toast({
+        title: "Error",
+        description: "Please select an organization first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsLoading(true);
     try {
       // Extraction now happens synchronously
-      const result = await enqueueExtractFeatures(artifactId);
+      const result = await enqueueExtractFeatures(artifactId, organization.id);
       
       if (result.success && result.data) {
         // Reload the job to get full details

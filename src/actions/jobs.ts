@@ -2,7 +2,7 @@
 
 import { db } from "@/db";
 import { jobs, rawArtifacts, samples, sampleFeatures, featureSets } from "@/db/schema";
-import { getAuthContext } from "@/lib/auth";
+import { getAuthContext, getAuthContextWithOrgId } from "@/lib/auth";
 import { extractTimeseriesCSV, extractEndpointJSON } from "@/lib/extractors";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { eq, and, desc } from "drizzle-orm";
@@ -116,7 +116,7 @@ export async function listAllJobs(): Promise<{
   }
 }
 
-export async function enqueueExtractFeatures(artifactId: string): Promise<{
+export async function enqueueExtractFeatures(artifactId: string, clerkOrgId?: string): Promise<{
   success: boolean;
   data?: { jobId: string; featuresCount?: number };
   error?: string;
@@ -125,7 +125,10 @@ export async function enqueueExtractFeatures(artifactId: string): Promise<{
   let orgId: string | null = null;
 
   try {
-    const authContext = await getAuthContext();
+    // Use client-provided orgId if available (workaround for Clerk session sync issues)
+    const authContext = clerkOrgId 
+      ? await getAuthContextWithOrgId(clerkOrgId)
+      : await getAuthContext();
     if (!authContext) {
       return { success: false, error: "Unauthorized" };
     }
