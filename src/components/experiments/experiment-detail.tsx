@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Plus,
   TestTubes,
@@ -14,6 +15,8 @@ import {
   Trash2,
   CheckCircle2,
   Clock,
+  Loader2,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -36,25 +39,91 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { SampleForm } from "@/components/samples/sample-form";
 import { FileUpload } from "@/components/artifacts/file-upload";
 import { ArtifactList } from "@/components/artifacts/artifact-list";
 import { Breadcrumbs } from "@/components/layout/breadcrumbs";
+import { useToast } from "@/hooks/use-toast";
 import { formatDate, formatDateTime } from "@/lib/utils";
-import { getExperiment, type ExperimentDetail as ExperimentDetailType } from "@/actions/experiments";
+import { getExperiment, deleteExperiment, type ExperimentDetail as ExperimentDetailType } from "@/actions/experiments";
+import { deleteArtifact } from "@/actions/artifacts";
 
 interface ExperimentDetailProps {
   experiment: ExperimentDetailType;
 }
 
 export function ExperimentDetail({ experiment: initialExperiment }: ExperimentDetailProps) {
+  const router = useRouter();
+  const { toast } = useToast();
   const [experiment, setExperiment] = useState(initialExperiment);
   const [sampleDialogOpen, setSampleDialogOpen] = useState(false);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  async function handleDeleteExperiment() {
+    setIsDeleting(true);
+    try {
+      const result = await deleteExperiment(experiment.id);
+      if (result.success) {
+        toast({
+          title: "Experiment deleted",
+          description: "The experiment and all associated data have been deleted.",
+        });
+        router.push("/experiments");
+      } else {
+        toast({
+          title: "Delete failed",
+          description: result.error || "Failed to delete experiment",
+          variant: "destructive",
+        });
+      }
+    } catch {
+      toast({
+        title: "Error",
+        description: "An error occurred while deleting the experiment",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
+  async function handleDeleteArtifact(artifactId: string) {
+    const result = await deleteArtifact(artifactId);
+    if (result.success) {
+      toast({
+        title: "File deleted",
+        description: "The file has been removed.",
+      });
+      // Refresh experiment data
+      const refreshResult = await getExperiment(experiment.id);
+      if (refreshResult.success && refreshResult.data) {
+        setExperiment(refreshResult.data);
+      }
+    } else {
+      toast({
+        title: "Delete failed",
+        description: result.error || "Failed to delete file",
+        variant: "destructive",
+      });
+    }
+  }
 
   async function handleUploadSuccess() {
     // Close the dialog
@@ -100,10 +169,44 @@ export function ExperimentDetail({ experiment: initialExperiment }: ExperimentDe
             <Edit className="h-4 w-4 mr-2" />
             Edit
           </Button>
-          <Button variant="outline" size="sm" className="text-destructive hover:text-destructive">
-            <Trash2 className="h-4 w-4 mr-2" />
-            Delete
-          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline" size="sm" className="text-destructive hover:text-destructive">
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle className="flex items-center gap-2">
+                  <AlertTriangle className="h-5 w-5 text-destructive" />
+                  Delete Experiment
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  Are you sure you want to delete <strong>{experiment.name}</strong>? 
+                  This will permanently delete all associated samples, files, and features. 
+                  This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleDeleteExperiment}
+                  disabled={isDeleting}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  {isDeleting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Deleting...
+                    </>
+                  ) : (
+                    "Delete Experiment"
+                  )}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </div>
 
@@ -374,6 +477,8 @@ export function ExperimentDetail({ experiment: initialExperiment }: ExperimentDe
               createdAt: a.createdAt,
             }))}
             showExtract={true}
+            showDelete={true}
+            onDelete={handleDeleteArtifact}
           />
         </CardContent>
       </Card>

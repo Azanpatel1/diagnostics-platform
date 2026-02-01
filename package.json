@@ -17,6 +17,7 @@
     "@aws-sdk/s3-request-presigner": "^3.x",
     "@clerk/nextjs": "^5.x",
     "@neondatabase/serverless": "^0.9.x",
+    "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-avatar": "^1.1.11",
     "@radix-ui/react-collapsible": "^1.1.12",
     "@radix-ui/react-dialog": "^1.1.15",

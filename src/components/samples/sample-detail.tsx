@@ -41,9 +41,11 @@ import { FeatureDisplay } from "@/components/features/feature-display";
 import { JobHistory } from "@/components/jobs/job-history";
 import { Breadcrumbs } from "@/components/layout/breadcrumbs";
 import { formatDate, formatDateTime } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
 import { getSampleFeatures } from "@/actions/features";
 import { listJobsForSample, JobWithDetails } from "@/actions/jobs";
 import { getSample, type SampleDetail as SampleDetailType } from "@/actions/samples";
+import { deleteArtifact } from "@/actions/artifacts";
 import type { SampleFeature } from "@/db/schema";
 
 interface SampleDetailProps {
@@ -51,6 +53,7 @@ interface SampleDetailProps {
 }
 
 export function SampleDetail({ sample: initialSample }: SampleDetailProps) {
+  const { toast } = useToast();
   const [sample, setSample] = useState(initialSample);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [features, setFeatures] = useState<SampleFeature[]>([]);
@@ -98,6 +101,27 @@ export function SampleDetail({ sample: initialSample }: SampleDetailProps) {
     const result = await getSample(sample.id);
     if (result.success && result.data) {
       setSample(result.data);
+    }
+  }
+
+  async function handleDeleteArtifact(artifactId: string) {
+    const result = await deleteArtifact(artifactId);
+    if (result.success) {
+      toast({
+        title: "File deleted",
+        description: "The file has been removed.",
+      });
+      // Refresh sample data
+      const refreshResult = await getSample(sample.id);
+      if (refreshResult.success && refreshResult.data) {
+        setSample(refreshResult.data);
+      }
+    } else {
+      toast({
+        title: "Delete failed",
+        description: result.error || "Failed to delete file",
+        variant: "destructive",
+      });
     }
   }
 
@@ -304,6 +328,8 @@ export function SampleDetail({ sample: initialSample }: SampleDetailProps) {
               <ArtifactList
                 artifacts={sample.artifacts}
                 showExtract={true}
+                showDelete={true}
+                onDelete={handleDeleteArtifact}
                 onFeatureExtracted={handleFeatureExtracted}
               />
             </CardContent>
