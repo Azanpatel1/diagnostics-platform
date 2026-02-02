@@ -22,7 +22,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { registerModel } from "@/actions/models";
-import { generateModelStorageKey, generateUploadUrl } from "@/lib/s3";
 
 interface ModelUploadDialogProps {
   open: boolean;
@@ -105,17 +104,24 @@ export function ModelUploadDialog({
     setError(null);
 
     try {
-      // Generate storage key for the model bundle
-      // Note: We need to get the internal org ID, but for now we'll use clerkOrgId
-      // The server action will handle the actual upload
-      const storageKey = generateModelStorageKey(organization.id, file.name);
-      
-      // Get presigned upload URL
+      // Get presigned upload URL from API
       setUploading(true);
-      const { uploadUrl } = await generateUploadUrl(
-        storageKey,
-        "application/zip"
-      );
+      const uploadUrlResponse = await fetch("/api/models/upload-url", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-clerk-org-id": organization.id,
+        },
+        body: JSON.stringify({ fileName: file.name }),
+      });
+
+      const uploadUrlResult = await uploadUrlResponse.json();
+      
+      if (!uploadUrlResult.success) {
+        throw new Error(uploadUrlResult.error || "Failed to get upload URL");
+      }
+
+      const { uploadUrl, storageKey } = uploadUrlResult;
 
       // Upload to S3
       const uploadResponse = await fetch(uploadUrl, {
