@@ -21,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { listFeatureSets, registerModel } from "@/actions/models";
+import { registerModel } from "@/actions/models";
 import { generateModelStorageKey, generateUploadUrl } from "@/lib/s3";
 
 interface ModelUploadDialogProps {
@@ -50,19 +50,26 @@ export function ModelUploadDialog({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (open) {
+    if (open && organization?.id) {
       loadFeatureSets();
     }
-  }, [open]);
+  }, [open, organization?.id]);
 
   async function loadFeatureSets() {
     try {
-      const result = await listFeatureSets();
+      const response = await fetch("/api/feature-sets", {
+        headers: {
+          "x-clerk-org-id": organization?.id || "",
+        },
+      });
+      const result = await response.json();
       if (result.success && result.data) {
         setFeatureSets(result.data);
         if (result.data.length > 0 && !featureSetId) {
           setFeatureSetId(result.data[0].id);
         }
+      } else if (result.error) {
+        console.error("Failed to load feature sets:", result.error);
       }
     } catch (err) {
       console.error("Failed to load feature sets:", err);
