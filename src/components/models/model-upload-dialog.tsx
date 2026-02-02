@@ -21,7 +21,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { registerModel } from "@/actions/models";
 
 interface ModelUploadDialogProps {
   open: boolean;
@@ -140,18 +139,27 @@ export function ModelUploadDialog({
       const { storageKey } = uploadResult;
       setUploading(false);
 
-      // Register model in database
-      const result = await registerModel({
-        name,
-        version,
-        task,
-        featureSetId,
-        storageKey,
-        modelFormat: "xgboost_json",
+      // Register model in database via API
+      const registerResponse = await fetch("/api/models/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-clerk-org-id": organization.id,
+        },
+        body: JSON.stringify({
+          name,
+          version,
+          task,
+          featureSetId,
+          storageKey,
+          modelFormat: "xgboost_json",
+        }),
       });
 
-      if (!result.success) {
-        throw new Error(result.error || "Failed to register model");
+      const registerResult = await registerResponse.json();
+
+      if (!registerResult.success) {
+        throw new Error(registerResult.error || "Failed to register model");
       }
 
       // Reset form and close
