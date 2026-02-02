@@ -37,6 +37,19 @@ export function generateStorageKey(
 }
 
 /**
+ * Generate a unique storage key for a model bundle
+ * Format: {orgId}/models/{uuid}-{sanitizedFilename}
+ */
+export function generateModelStorageKey(
+  orgId: string,
+  fileName: string
+): string {
+  const uuid = crypto.randomUUID();
+  const sanitizedFileName = sanitizeFileName(fileName);
+  return `${orgId}/models/${uuid}-${sanitizedFileName}`;
+}
+
+/**
  * Sanitize a filename to be safe for S3 storage
  */
 function sanitizeFileName(fileName: string): string {

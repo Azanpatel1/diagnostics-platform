@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useOrganization } from "@clerk/nextjs";
 import {
   Plus,
   FileUp,
@@ -16,6 +17,11 @@ import {
   CheckCircle2,
   Clock,
   BarChart3,
+  Brain,
+  Play,
+  Loader2,
+  Copy,
+  TreeDeciduous,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -46,6 +52,8 @@ import { getSampleFeatures } from "@/actions/features";
 import { listJobsForSample, JobWithDetails } from "@/actions/jobs";
 import { getSample, type SampleDetail as SampleDetailType } from "@/actions/samples";
 import { deleteArtifact } from "@/actions/artifacts";
+import { getActiveModel, type ModelWithDetails } from "@/actions/models";
+import { getPrediction, getLeafEmbedding, type PredictionWithModel, type LeafEmbeddingData } from "@/actions/predictions";
 import type { SampleFeature } from "@/db/schema";
 
 interface SampleDetailProps {
@@ -54,25 +62,46 @@ interface SampleDetailProps {
 
 export function SampleDetail({ sample: initialSample }: SampleDetailProps) {
   const { toast } = useToast();
+  const { organization } = useOrganization();
   const [sample, setSample] = useState(initialSample);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [features, setFeatures] = useState<SampleFeature[]>([]);
   const [jobs, setJobs] = useState<JobWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // Prediction state
+  const [activeModel, setActiveModel] = useState<ModelWithDetails | null>(null);
+  const [prediction, setPrediction] = useState<PredictionWithModel | null>(null);
+  const [leafEmbedding, setLeafEmbedding] = useState<LeafEmbeddingData | null>(null);
+  const [predicting, setPredicting] = useState(false);
 
-  // Load features and jobs
+  // Load features, jobs, and prediction data
   useEffect(() => {
     async function loadData() {
       try {
-        const [featuresResult, jobsResult] = await Promise.all([
+        const [featuresResult, jobsResult, modelResult, predictionResult] = await Promise.all([
           getSampleFeatures(sample.id),
           listJobsForSample(sample.id),
+          getActiveModel("binary_classification"),
+          getPrediction(sample.id),
         ]);
+        
         if (featuresResult.success) {
           setFeatures(featuresResult.features);
         }
         if (jobsResult.success) {
           setJobs(jobsResult.jobs);
+        }
+        if (modelResult.success && modelResult.data) {
+          setActiveModel(modelResult.data);
+        }
+        if (predictionResult.success && predictionResult.data) {
+          setPrediction(predictionResult.data);
+          // Load leaf embedding if we have a prediction
+          const leafResult = await getLeafEmbedding(sample.id, predictionResult.data.modelId);
+          if (leafResult.success && leafResult.data) {
+            setLeafEmbedding(leafResult.data);
+          }
         }
       } finally {
         setLoading(false);
@@ -80,6 +109,64 @@ export function SampleDetail({ sample: initialSample }: SampleDetailProps) {
     }
     loadData();
   }, [sample.id]);
+  
+  async function handleRunPrediction() {
+    if (!organization?.id || !activeModel) return;
+    
+    setPredicting(true);
+    try {
+      const response = await fetch(`/api/samples/${sample.id}/predict`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-clerk-org-id": organization.id,
+        },
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        toast({
+          title: "Prediction complete",
+          description: `Predicted class: ${result.data.predictedClass} (probability: ${(result.data.yHat * 100).toFixed(1)}%)`,
+        });
+        
+        // Refresh prediction data
+        const predictionResult = await getPrediction(sample.id);
+        if (predictionResult.success && predictionResult.data) {
+          setPrediction(predictionResult.data);
+          const leafResult = await getLeafEmbedding(sample.id, predictionResult.data.modelId);
+          if (leafResult.success && leafResult.data) {
+            setLeafEmbedding(leafResult.data);
+          }
+        }
+      } else {
+        toast({
+          title: "Prediction failed",
+          description: result.error || "Failed to run prediction",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to connect to prediction service",
+        variant: "destructive",
+      });
+    } finally {
+      setPredicting(false);
+    }
+  }
+  
+  function copyLeafIndices() {
+    if (leafEmbedding) {
+      navigator.clipboard.writeText(JSON.stringify(leafEmbedding.leafIndices));
+      toast({
+        title: "Copied",
+        description: "Leaf indices copied to clipboard",
+      });
+    }
+  }
 
   async function handleFeatureExtracted() {
     // Reload features when a new extraction completes
@@ -275,7 +362,7 @@ export function SampleDetail({ sample: initialSample }: SampleDetailProps) {
         </CardContent>
       </Card>
 
-      {/* Tabs for Files, Features, Jobs */}
+      {/* Tabs for Files, Features, Predictions, Jobs */}
       <Tabs defaultValue="files" className="space-y-4">
         <TabsList>
           <TabsTrigger value="files" className="flex items-center gap-2">
@@ -285,6 +372,10 @@ export function SampleDetail({ sample: initialSample }: SampleDetailProps) {
           <TabsTrigger value="features" className="flex items-center gap-2">
             <Activity className="h-4 w-4" />
             Features ({features.length})
+          </TabsTrigger>
+          <TabsTrigger value="prediction" className="flex items-center gap-2">
+            <Brain className="h-4 w-4" />
+            Prediction
           </TabsTrigger>
           <TabsTrigger value="jobs" className="flex items-center gap-2">
             <Clock className="h-4 w-4" />
@@ -352,13 +443,144 @@ export function SampleDetail({ sample: initialSample }: SampleDetailProps) {
           </Card>
         </TabsContent>
 
+        <TabsContent value="prediction">
+          <div className="space-y-4">
+            {/* Prediction Result Card */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle>Prediction Result</CardTitle>
+                  <CardDescription>
+                    {prediction
+                      ? `Last prediction using ${prediction.modelName} v${prediction.modelVersion}`
+                      : "No prediction available for this sample"}
+                  </CardDescription>
+                </div>
+                {activeModel && (
+                  <Button onClick={handleRunPrediction} disabled={predicting}>
+                    {predicting ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Play className="h-4 w-4 mr-2" />
+                    )}
+                    {prediction ? "Re-run Prediction" : "Run Prediction"}
+                  </Button>
+                )}
+              </CardHeader>
+              <CardContent>
+                {prediction ? (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-muted-foreground">Probability</p>
+                      <p className="text-2xl font-bold font-mono">
+                        {(prediction.yHat * 100).toFixed(2)}%
+                      </p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-muted-foreground">Threshold</p>
+                      <p className="text-2xl font-bold font-mono">
+                        {(prediction.threshold * 100).toFixed(0)}%
+                      </p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-muted-foreground">Predicted Class</p>
+                      <Badge 
+                        className={`text-lg px-3 py-1 ${
+                          prediction.predictedClass === 1 
+                            ? "bg-red-100 text-red-800 hover:bg-red-100" 
+                            : "bg-green-100 text-green-800 hover:bg-green-100"
+                        }`}
+                      >
+                        {prediction.predictedClass === 1 ? "Positive" : "Negative"}
+                      </Badge>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-muted-foreground">Predicted At</p>
+                      <p className="text-sm">
+                        {formatDateTime(prediction.createdAt)}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-12">
+                    <Brain className="h-12 w-12 text-muted-foreground mb-4" />
+                    <h3 className="text-lg font-semibold mb-2">No prediction yet</h3>
+                    <p className="text-muted-foreground text-center max-w-sm mb-4">
+                      {activeModel
+                        ? "Click \"Run Prediction\" to predict this sample using the active model."
+                        : "No active model available. Please activate a model first."}
+                    </p>
+                    {!activeModel && (
+                      <Link href="/models">
+                        <Button variant="outline">Go to Models</Button>
+                      </Link>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Leaf Embedding Debug Card */}
+            {leafEmbedding && (
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <TreeDeciduous className="h-5 w-5" />
+                      Leaf Embedding
+                    </CardTitle>
+                    <CardDescription>
+                      XGBoost leaf indices for similarity analysis
+                    </CardDescription>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={copyLeafIndices}>
+                    <Copy className="h-4 w-4 mr-2" />
+                    Copy Array
+                  </Button>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-6">
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Number of Trees</p>
+                        <p className="text-xl font-bold">{leafEmbedding.leafIndices.length}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Created At</p>
+                        <p className="text-sm">{formatDateTime(leafEmbedding.createdAt)}</p>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-muted-foreground mb-2">
+                        First 20 Leaf Indices
+                      </p>
+                      <div className="flex flex-wrap gap-1">
+                        {leafEmbedding.leafIndices.slice(0, 20).map((idx, i) => (
+                          <Badge key={i} variant="secondary" className="font-mono">
+                            {idx}
+                          </Badge>
+                        ))}
+                        {leafEmbedding.leafIndices.length > 20 && (
+                          <Badge variant="outline">
+                            +{leafEmbedding.leafIndices.length - 20} more
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </TabsContent>
+
         <TabsContent value="jobs">
           <Card>
             <CardHeader>
               <CardTitle>Job History</CardTitle>
               <CardDescription>
                 {jobs.length > 0
-                  ? "Recent feature extraction jobs for this sample"
+                  ? "Recent feature extraction and prediction jobs for this sample"
                   : "No jobs have been run for this sample yet."}
               </CardDescription>
             </CardHeader>

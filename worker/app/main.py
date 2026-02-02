@@ -1,4 +1,4 @@
-"""FastAPI application for the worker service."""
+"""FastAPI application for the ML worker service."""
 
 import threading
 from contextlib import asynccontextmanager
@@ -9,10 +9,20 @@ from typing import Optional
 from .config import get_settings
 from .consumer import start_consumer, process_job
 from .db import get_job
+from .routes import predict_router
 
 
 # Background consumer thread
 consumer_thread: Optional[threading.Thread] = None
+
+
+def check_xgboost_available() -> bool:
+    """Check if XGBoost is available."""
+    try:
+        import xgboost
+        return True
+    except ImportError:
+        return False
 
 
 @asynccontextmanager
@@ -33,21 +43,30 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Diagnostics Feature Worker",
-    description="Background worker for feature extraction jobs",
-    version="1.0.0",
+    title="Diagnostics ML Worker",
+    description="ML worker service for feature extraction and XGBoost inference",
+    version="2.0.0",
     lifespan=lifespan,
 )
+
+# Register prediction routes
+app.include_router(predict_router)
 
 
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
     settings = get_settings()
+    xgboost_available = check_xgboost_available()
+    
     return {
         "status": "healthy",
-        "service": "feature-worker",
-        "version": "1.0.0",
+        "service": "ml-worker",
+        "version": "2.0.0",
+        "capabilities": {
+            "feature_extraction": True,
+            "xgboost_inference": xgboost_available,
+        },
         "config": {
             "redis_configured": bool(settings.upstash_redis_rest_url),
             "database_configured": bool(settings.database_url),

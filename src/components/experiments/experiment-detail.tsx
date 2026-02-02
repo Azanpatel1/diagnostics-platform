@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useOrganization } from "@clerk/nextjs";
 import {
   Plus,
   TestTubes,
@@ -17,6 +18,9 @@ import {
   Clock,
   Loader2,
   AlertTriangle,
+  Brain,
+  Play,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -63,6 +67,8 @@ import { useToast } from "@/hooks/use-toast";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import { getExperiment, deleteExperiment, type ExperimentDetail as ExperimentDetailType } from "@/actions/experiments";
 import { deleteArtifact } from "@/actions/artifacts";
+import { getActiveModel, type ModelWithDetails } from "@/actions/models";
+import { getPredictionsForExperiment, type PredictionWithModel } from "@/actions/predictions";
 
 interface ExperimentDetailProps {
   experiment: ExperimentDetailType;
@@ -71,10 +77,129 @@ interface ExperimentDetailProps {
 export function ExperimentDetail({ experiment: initialExperiment }: ExperimentDetailProps) {
   const router = useRouter();
   const { toast } = useToast();
+  const { organization } = useOrganization();
   const [experiment, setExperiment] = useState(initialExperiment);
   const [sampleDialogOpen, setSampleDialogOpen] = useState(false);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  
+  // Prediction state
+  const [activeModel, setActiveModel] = useState<ModelWithDetails | null>(null);
+  const [predictions, setPredictions] = useState<Map<string, PredictionWithModel>>(new Map());
+  const [predictingAll, setPredictingAll] = useState(false);
+  const [predictingSample, setPredictingSample] = useState<string | null>(null);
+
+  // Load active model and predictions
+  useEffect(() => {
+    async function loadPredictionData() {
+      try {
+        const [modelResult, predictionsResult] = await Promise.all([
+          getActiveModel("binary_classification"),
+          getPredictionsForExperiment(experiment.id),
+        ]);
+        
+        if (modelResult.success && modelResult.data) {
+          setActiveModel(modelResult.data);
+        }
+        
+        if (predictionsResult.success && predictionsResult.data) {
+          setPredictions(predictionsResult.data);
+        }
+      } catch (error) {
+        console.error("Failed to load prediction data:", error);
+      }
+    }
+    
+    loadPredictionData();
+  }, [experiment.id]);
+
+  async function handlePredictSample(sampleId: string) {
+    if (!organization?.id) return;
+    
+    setPredictingSample(sampleId);
+    try {
+      const response = await fetch(`/api/samples/${sampleId}/predict`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-clerk-org-id": organization.id,
+        },
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        toast({
+          title: "Prediction complete",
+          description: `Predicted class: ${result.data.predictedClass} (probability: ${(result.data.yHat * 100).toFixed(1)}%)`,
+        });
+        
+        // Refresh predictions
+        const predictionsResult = await getPredictionsForExperiment(experiment.id);
+        if (predictionsResult.success && predictionsResult.data) {
+          setPredictions(predictionsResult.data);
+        }
+      } else {
+        toast({
+          title: "Prediction failed",
+          description: result.error || "Failed to run prediction",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to connect to prediction service",
+        variant: "destructive",
+      });
+    } finally {
+      setPredictingSample(null);
+    }
+  }
+
+  async function handlePredictAll() {
+    if (!organization?.id) return;
+    
+    setPredictingAll(true);
+    try {
+      const response = await fetch(`/api/experiments/${experiment.id}/predict`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-clerk-org-id": organization.id,
+        },
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        toast({
+          title: "Batch prediction complete",
+          description: `${result.data.successful} of ${result.data.totalSamples} samples predicted successfully`,
+        });
+        
+        // Refresh predictions
+        const predictionsResult = await getPredictionsForExperiment(experiment.id);
+        if (predictionsResult.success && predictionsResult.data) {
+          setPredictions(predictionsResult.data);
+        }
+      } else {
+        toast({
+          title: "Batch prediction failed",
+          description: result.error || "Failed to run predictions",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to connect to prediction service",
+        variant: "destructive",
+      });
+    } finally {
+      setPredictingAll(false);
+    }
+  }
 
   async function handleDeleteExperiment() {
     setIsDeleting(true);
@@ -237,11 +362,11 @@ export function ExperimentDetail({ experiment: initialExperiment }: ExperimentDe
         <Card>
           <CardContent className="flex items-center gap-4 p-4">
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-100">
-              <CheckCircle2 className="h-5 w-5 text-green-600" />
+              <Brain className="h-5 w-5 text-green-600" />
             </div>
             <div>
-              <p className="text-sm font-medium text-muted-foreground">Processed</p>
-              <p className="text-2xl font-bold">0</p>
+              <p className="text-sm font-medium text-muted-foreground">Predicted</p>
+              <p className="text-2xl font-bold">{predictions.size}</p>
             </div>
           </CardContent>
         </Card>
@@ -252,7 +377,7 @@ export function ExperimentDetail({ experiment: initialExperiment }: ExperimentDe
             </div>
             <div>
               <p className="text-sm font-medium text-muted-foreground">Pending</p>
-              <p className="text-2xl font-bold">{experiment.artifacts.length}</p>
+              <p className="text-2xl font-bold">{experiment.samples.length - predictions.size}</p>
             </div>
           </CardContent>
         </Card>
@@ -335,28 +460,49 @@ export function ExperimentDetail({ experiment: initialExperiment }: ExperimentDe
             <CardDescription>
               {experiment.samples.length} sample
               {experiment.samples.length !== 1 ? "s" : ""} in this experiment
+              {activeModel && (
+                <span className="ml-2 text-xs">
+                  • Active model: <span className="font-medium">{activeModel.name} v{activeModel.version}</span>
+                </span>
+              )}
             </CardDescription>
           </div>
-          <Dialog open={sampleDialogOpen} onOpenChange={setSampleDialogOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="h-4 w-4 mr-2" />
-                Add Sample
+          <div className="flex gap-2">
+            {activeModel && experiment.samples.length > 0 && (
+              <Button
+                variant="outline"
+                onClick={handlePredictAll}
+                disabled={predictingAll}
+              >
+                {predictingAll ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Zap className="h-4 w-4 mr-2" />
+                )}
+                Predict All
               </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Add New Sample</DialogTitle>
-                <DialogDescription>
-                  Create a new sample for this experiment
-                </DialogDescription>
-              </DialogHeader>
-              <SampleForm
-                experimentId={experiment.id}
-                onSuccess={handleSampleCreated}
-              />
-            </DialogContent>
-          </Dialog>
+            )}
+            <Dialog open={sampleDialogOpen} onOpenChange={setSampleDialogOpen}>
+              <DialogTrigger asChild>
+                <Button>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Sample
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Add New Sample</DialogTitle>
+                  <DialogDescription>
+                    Create a new sample for this experiment
+                  </DialogDescription>
+                </DialogHeader>
+                <SampleForm
+                  experimentId={experiment.id}
+                  onSuccess={handleSampleCreated}
+                />
+              </DialogContent>
+            </Dialog>
+          </div>
         </CardHeader>
         <CardContent>
           {experiment.samples.length === 0 ? (
@@ -379,50 +525,84 @@ export function ExperimentDetail({ experiment: initialExperiment }: ExperimentDe
                     <TableHead>Label</TableHead>
                     <TableHead>Patient ID</TableHead>
                     <TableHead>Matrix Type</TableHead>
-                    <TableHead>Collected</TableHead>
                     <TableHead className="text-center">Files</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead className="text-center">Prediction</TableHead>
+                    <TableHead className="text-center">Class</TableHead>
                     <TableHead></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {experiment.samples.map((sample) => (
-                    <TableRow key={sample.id}>
-                      <TableCell className="font-medium">
-                        {sample.sampleLabel || "—"}
-                      </TableCell>
-                      <TableCell>
-                        <span className="font-mono text-sm">
-                          {sample.patientPseudonym || "—"}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        {sample.matrixType ? (
-                          <Badge variant="outline">{sample.matrixType}</Badge>
-                        ) : (
-                          "—"
-                        )}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {sample.collectedAt
-                          ? formatDate(sample.collectedAt)
-                          : "—"}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Badge variant="secondary">{sample.artifactCount}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="secondary">Pending</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Link href={`/samples/${sample.id}`}>
-                          <Button variant="ghost" size="sm">
-                            View
-                          </Button>
-                        </Link>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {experiment.samples.map((sample) => {
+                    const prediction = predictions.get(sample.id);
+                    return (
+                      <TableRow key={sample.id}>
+                        <TableCell className="font-medium">
+                          {sample.sampleLabel || "—"}
+                        </TableCell>
+                        <TableCell>
+                          <span className="font-mono text-sm">
+                            {sample.patientPseudonym || "—"}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          {sample.matrixType ? (
+                            <Badge variant="outline">{sample.matrixType}</Badge>
+                          ) : (
+                            "—"
+                          )}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Badge variant="secondary">{sample.artifactCount}</Badge>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {prediction ? (
+                            <span className="font-mono text-sm font-medium">
+                              {(prediction.yHat * 100).toFixed(1)}%
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {prediction ? (
+                            <Badge 
+                              className={prediction.predictedClass === 1 
+                                ? "bg-red-100 text-red-800 hover:bg-red-100" 
+                                : "bg-green-100 text-green-800 hover:bg-green-100"
+                              }
+                            >
+                              {prediction.predictedClass === 1 ? "Positive" : "Negative"}
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary">Pending</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            {activeModel && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handlePredictSample(sample.id)}
+                                disabled={predictingSample === sample.id || predictingAll}
+                              >
+                                {predictingSample === sample.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Play className="h-4 w-4" />
+                                )}
+                              </Button>
+                            )}
+                            <Link href={`/samples/${sample.id}`}>
+                              <Button variant="ghost" size="sm">
+                                View
+                              </Button>
+                            </Link>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>

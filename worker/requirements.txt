@@ -17,6 +17,9 @@ pandas==2.2.0
 numpy==1.26.4
 scipy==1.12.0
 
+# ML - XGBoost
+xgboost==2.0.3
+
 # Utilities
 python-dotenv==1.0.1
 pydantic==2.6.1

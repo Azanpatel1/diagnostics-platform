@@ -6,6 +6,9 @@ import {
   primaryKey,
   jsonb,
   unique,
+  doublePrecision,
+  boolean,
+  integer,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
@@ -147,7 +150,7 @@ export const jobs = pgTable("jobs", {
   orgId: uuid("org_id")
     .notNull()
     .references(() => orgs.id, { onDelete: "cascade" }),
-  type: text("type").notNull(), // e.g., "extract_features"
+  type: text("type").notNull(), // e.g., "extract_features", "predict_xgboost"
   status: text("status").notNull().default("queued"), // queued, running, succeeded, failed
   input: jsonb("input"), // job parameters
   output: jsonb("output"), // result data
@@ -160,6 +163,90 @@ export const jobs = pgTable("jobs", {
     .notNull(),
 });
 
+// ============================================
+// PHASE 3: ML Model Registry & Predictions
+// ============================================
+
+// Model registry table - stores versioned model bundles
+export const modelRegistry = pgTable(
+  "model_registry",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id, { onDelete: "cascade" }),
+    name: text("name").notNull(), // e.g., "sepsis_classifier"
+    version: text("version").notNull(), // e.g., "1.0.0"
+    task: text("task").notNull(), // e.g., "binary_classification"
+    featureSetId: uuid("feature_set_id")
+      .notNull()
+      .references(() => featureSets.id, { onDelete: "restrict" }),
+    storageKey: text("storage_key").notNull(), // S3 key to model bundle zip
+    modelFormat: text("model_format").notNull().default("xgboost_json"), // xgboost_json, xgboost_ubj
+    metrics: jsonb("metrics"), // training metrics, e.g., { auc: 0.95, accuracy: 0.92 }
+    isActive: boolean("is_active").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    // Unique constraint: one version per model name per org
+    uniqueOrgNameVersion: unique().on(table.orgId, table.name, table.version),
+  })
+);
+
+// Predictions table - stores inference results
+export const predictions = pgTable(
+  "predictions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id, { onDelete: "cascade" }),
+    sampleId: uuid("sample_id")
+      .notNull()
+      .references(() => samples.id, { onDelete: "cascade" }),
+    modelId: uuid("model_id")
+      .notNull()
+      .references(() => modelRegistry.id, { onDelete: "cascade" }),
+    yHat: doublePrecision("y_hat").notNull(), // predicted probability
+    threshold: doublePrecision("threshold").notNull(), // decision threshold used
+    predictedClass: integer("predicted_class").notNull(), // 0 or 1
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    // Unique constraint for upsert on re-run
+    uniqueSampleModel: unique().on(table.sampleId, table.modelId),
+  })
+);
+
+// Leaf embeddings table - stores XGBoost leaf indices
+export const leafEmbeddings = pgTable(
+  "leaf_embeddings",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id, { onDelete: "cascade" }),
+    sampleId: uuid("sample_id")
+      .notNull()
+      .references(() => samples.id, { onDelete: "cascade" }),
+    modelId: uuid("model_id")
+      .notNull()
+      .references(() => modelRegistry.id, { onDelete: "cascade" }),
+    leafIndices: jsonb("leaf_indices").notNull(), // array of leaf indices per tree
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    // Unique constraint for upsert on re-run
+    uniqueSampleModelLeaf: unique().on(table.sampleId, table.modelId),
+  })
+);
+
 // Relations
 export const orgsRelations = relations(orgs, ({ many }) => ({
   members: many(orgMembers),
@@ -169,6 +256,9 @@ export const orgsRelations = relations(orgs, ({ many }) => ({
   featureSets: many(featureSets),
   sampleFeatures: many(sampleFeatures),
   jobs: many(jobs),
+  models: many(modelRegistry),
+  predictions: many(predictions),
+  leafEmbeddings: many(leafEmbeddings),
 }));
 
 export const orgMembersRelations = relations(orgMembers, ({ one }) => ({
@@ -198,6 +288,8 @@ export const samplesRelations = relations(samples, ({ one, many }) => ({
   }),
   artifacts: many(rawArtifacts),
   features: many(sampleFeatures),
+  predictions: many(predictions),
+  leafEmbeddings: many(leafEmbeddings),
 }));
 
 export const rawArtifactsRelations = relations(rawArtifacts, ({ one, many }) => ({
@@ -223,6 +315,7 @@ export const featureSetsRelations = relations(featureSets, ({ one, many }) => ({
     references: [orgs.id],
   }),
   sampleFeatures: many(sampleFeatures),
+  models: many(modelRegistry),
 }));
 
 export const sampleFeaturesRelations = relations(sampleFeatures, ({ one }) => ({
@@ -248,6 +341,50 @@ export const jobsRelations = relations(jobs, ({ one }) => ({
   org: one(orgs, {
     fields: [jobs.orgId],
     references: [orgs.id],
+  }),
+}));
+
+// Phase 3 relations
+export const modelRegistryRelations = relations(modelRegistry, ({ one, many }) => ({
+  org: one(orgs, {
+    fields: [modelRegistry.orgId],
+    references: [orgs.id],
+  }),
+  featureSet: one(featureSets, {
+    fields: [modelRegistry.featureSetId],
+    references: [featureSets.id],
+  }),
+  predictions: many(predictions),
+  leafEmbeddings: many(leafEmbeddings),
+}));
+
+export const predictionsRelations = relations(predictions, ({ one }) => ({
+  org: one(orgs, {
+    fields: [predictions.orgId],
+    references: [orgs.id],
+  }),
+  sample: one(samples, {
+    fields: [predictions.sampleId],
+    references: [samples.id],
+  }),
+  model: one(modelRegistry, {
+    fields: [predictions.modelId],
+    references: [modelRegistry.id],
+  }),
+}));
+
+export const leafEmbeddingsRelations = relations(leafEmbeddings, ({ one }) => ({
+  org: one(orgs, {
+    fields: [leafEmbeddings.orgId],
+    references: [orgs.id],
+  }),
+  sample: one(samples, {
+    fields: [leafEmbeddings.sampleId],
+    references: [samples.id],
+  }),
+  model: one(modelRegistry, {
+    fields: [leafEmbeddings.modelId],
+    references: [modelRegistry.id],
   }),
 }));
 
@@ -286,3 +423,30 @@ export const JobStatus = {
 } as const;
 
 export type JobStatusType = (typeof JobStatus)[keyof typeof JobStatus];
+
+// Phase 3 types
+export type ModelRegistry = typeof modelRegistry.$inferSelect;
+export type NewModelRegistry = typeof modelRegistry.$inferInsert;
+
+export type Prediction = typeof predictions.$inferSelect;
+export type NewPrediction = typeof predictions.$inferInsert;
+
+export type LeafEmbedding = typeof leafEmbeddings.$inferSelect;
+export type NewLeafEmbedding = typeof leafEmbeddings.$inferInsert;
+
+// Model task types
+export const ModelTask = {
+  BINARY_CLASSIFICATION: "binary_classification",
+  MULTICLASS_CLASSIFICATION: "multiclass_classification",
+  REGRESSION: "regression",
+} as const;
+
+export type ModelTaskType = (typeof ModelTask)[keyof typeof ModelTask];
+
+// Model format types
+export const ModelFormat = {
+  XGBOOST_JSON: "xgboost_json",
+  XGBOOST_UBJ: "xgboost_ubj",
+} as const;
+
+export type ModelFormatType = (typeof ModelFormat)[keyof typeof ModelFormat];
