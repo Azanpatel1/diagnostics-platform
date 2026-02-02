@@ -14,6 +14,7 @@ import {
   FileBarChart,
   Users,
   Bell,
+  Brain,
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -43,6 +44,11 @@ const navigation = [
     name: "Processing",
     href: "/jobs",
     icon: Activity,
+  },
+  {
+    name: "Models",
+    href: "/models",
+    icon: Brain,
   },
 ];
 
