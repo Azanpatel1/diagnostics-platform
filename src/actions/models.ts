@@ -353,6 +353,8 @@ export async function listFeatureSets(): Promise<{
     const authContext = await getAuthContext();
     const { orgId } = authContext;
 
+    console.log("[listFeatureSets] Looking for feature sets with orgId:", orgId);
+
     const sets = await db
       .select({
         id: featureSets.id,
@@ -362,6 +364,21 @@ export async function listFeatureSets(): Promise<{
       .from(featureSets)
       .where(eq(featureSets.orgId, orgId))
       .orderBy(featureSets.name);
+
+    console.log("[listFeatureSets] Found sets:", sets);
+
+    // If no feature sets found, also check what feature sets exist in DB (for debugging)
+    if (sets.length === 0) {
+      const allSets = await db
+        .select({
+          id: featureSets.id,
+          orgId: featureSets.orgId,
+          name: featureSets.name,
+        })
+        .from(featureSets)
+        .limit(5);
+      console.log("[listFeatureSets] All feature sets in DB (first 5):", allSets);
+    }
 
     return { success: true, data: sets };
   } catch (error) {
