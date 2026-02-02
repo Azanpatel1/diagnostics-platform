@@ -1,9 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { db } from "@/db";
 import { orgs } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { generateModelStorageKey, generateUploadUrl } from "@/lib/s3";
+import { generateModelStorageKey } from "@/lib/s3";
+
+const s3Client = new S3Client({
+  region: process.env.AWS_REGION!,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+  },
+});
+
+const BUCKET_NAME = process.env.AWS_S3_BUCKET!;
 
 export async function POST(request: NextRequest) {
   try {
@@ -36,12 +47,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
-    const { fileName } = body;
+    // Get the file from form data
+    const formData = await request.formData();
+    const file = formData.get("file") as File | null;
+    const fileName = formData.get("fileName") as string | null;
 
-    if (!fileName) {
+    if (!file || !fileName) {
       return NextResponse.json(
-        { error: "fileName is required" },
+        { error: "file and fileName are required" },
         { status: 400 }
       );
     }
@@ -49,20 +62,28 @@ export async function POST(request: NextRequest) {
     // Generate storage key using internal org ID
     const storageKey = generateModelStorageKey(org.id, fileName);
 
-    // Generate presigned upload URL
-    const { uploadUrl } = await generateUploadUrl(storageKey, "application/zip");
+    // Upload directly to S3 from server (bypasses CORS)
+    const fileBuffer = Buffer.from(await file.arrayBuffer());
+    
+    await s3Client.send(
+      new PutObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: storageKey,
+        Body: fileBuffer,
+        ContentType: "application/zip",
+      })
+    );
 
     return NextResponse.json({
       success: true,
-      uploadUrl,
       storageKey,
     });
   } catch (error) {
-    console.error("Error generating model upload URL:", error);
+    console.error("Error uploading model:", error);
     return NextResponse.json(
       { 
         success: false, 
-        error: error instanceof Error ? error.message : "Failed to generate upload URL" 
+        error: error instanceof Error ? error.message : "Failed to upload model" 
       },
       { status: 500 }
     );

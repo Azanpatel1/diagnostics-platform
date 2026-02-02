@@ -104,58 +104,40 @@ export function ModelUploadDialog({
     setError(null);
 
     try {
-      // Get presigned upload URL from API
+      // Upload file to server (server handles S3 upload to avoid CORS)
       setUploading(true);
       
-      let uploadUrlResponse;
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("fileName", file.name);
+
+      let uploadResponse;
       try {
-        uploadUrlResponse = await fetch("/api/models/upload-url", {
+        uploadResponse = await fetch("/api/models/upload", {
           method: "POST",
           headers: {
-            "Content-Type": "application/json",
             "x-clerk-org-id": organization.id,
           },
-          body: JSON.stringify({ fileName: file.name }),
+          body: formData,
         });
       } catch (fetchError) {
-        console.error("Fetch error:", fetchError);
+        console.error("Upload error:", fetchError);
         throw new Error("Network error: Could not connect to server");
       }
 
-      if (!uploadUrlResponse.ok) {
-        const errorText = await uploadUrlResponse.text();
-        console.error("Upload URL error:", uploadUrlResponse.status, errorText);
-        throw new Error(`Server error (${uploadUrlResponse.status}): ${errorText}`);
-      }
-
-      const uploadUrlResult = await uploadUrlResponse.json();
-      
-      if (!uploadUrlResult.success) {
-        throw new Error(uploadUrlResult.error || "Failed to get upload URL");
-      }
-
-      const { uploadUrl, storageKey } = uploadUrlResult;
-
-      // Upload to S3
-      let uploadResponse;
-      try {
-        uploadResponse = await fetch(uploadUrl, {
-          method: "PUT",
-          body: file,
-          headers: {
-            "Content-Type": "application/zip",
-          },
-        });
-      } catch (s3Error) {
-        console.error("S3 upload error:", s3Error);
-        throw new Error("Failed to upload to storage");
-      }
-
       if (!uploadResponse.ok) {
-        console.error("S3 response error:", uploadResponse.status);
-        throw new Error(`Storage upload failed (${uploadResponse.status})`);
+        const errorText = await uploadResponse.text();
+        console.error("Upload error:", uploadResponse.status, errorText);
+        throw new Error(`Server error (${uploadResponse.status}): ${errorText}`);
       }
 
+      const uploadResult = await uploadResponse.json();
+      
+      if (!uploadResult.success) {
+        throw new Error(uploadResult.error || "Failed to upload model");
+      }
+
+      const { storageKey } = uploadResult;
       setUploading(false);
 
       // Register model in database
