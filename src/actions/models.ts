@@ -343,6 +343,7 @@ export async function deleteModel(modelId: string): Promise<{
 
 /**
  * List available feature sets for model registration.
+ * Auto-creates the core_v1 feature set if none exist for the org.
  */
 export async function listFeatureSets(): Promise<{
   success: boolean;
@@ -353,9 +354,7 @@ export async function listFeatureSets(): Promise<{
     const authContext = await getAuthContext();
     const { orgId } = authContext;
 
-    console.log("[listFeatureSets] Looking for feature sets with orgId:", orgId);
-
-    const sets = await db
+    let sets = await db
       .select({
         id: featureSets.id,
         name: featureSets.name,
@@ -365,19 +364,47 @@ export async function listFeatureSets(): Promise<{
       .where(eq(featureSets.orgId, orgId))
       .orderBy(featureSets.name);
 
-    console.log("[listFeatureSets] Found sets:", sets);
-
-    // If no feature sets found, also check what feature sets exist in DB (for debugging)
+    // If no feature sets found, auto-create the core_v1 feature set
     if (sets.length === 0) {
-      const allSets = await db
-        .select({
-          id: featureSets.id,
-          orgId: featureSets.orgId,
-          name: featureSets.name,
-        })
-        .from(featureSets)
-        .limit(5);
-      console.log("[listFeatureSets] All feature sets in DB (first 5):", allSets);
+      console.log("[listFeatureSets] No feature sets found for org, creating core_v1...");
+      
+      try {
+        const [newFeatureSet] = await db
+          .insert(featureSets)
+          .values({
+            orgId,
+            name: "core_v1",
+            version: "1.0.0",
+            featureList: {
+              timeseries: [
+                "baseline_mean", "baseline_std", "y_max", "y_min",
+                "t_at_max", "auc", "slope_early", "t_halfmax", "snr"
+              ],
+              endpoint: ["endpoint_value"],
+              global: ["num_channels", "signal_quality_flag"],
+            },
+          })
+          .returning({
+            id: featureSets.id,
+            name: featureSets.name,
+            version: featureSets.version,
+          });
+        
+        sets = [newFeatureSet];
+        console.log("[listFeatureSets] Created core_v1 feature set:", newFeatureSet.id);
+      } catch (insertError) {
+        // If insert fails (e.g., race condition), try fetching again
+        console.log("[listFeatureSets] Insert failed, re-fetching:", insertError);
+        sets = await db
+          .select({
+            id: featureSets.id,
+            name: featureSets.name,
+            version: featureSets.version,
+          })
+          .from(featureSets)
+          .where(eq(featureSets.orgId, orgId))
+          .orderBy(featureSets.name);
+      }
     }
 
     return { success: true, data: sets };
