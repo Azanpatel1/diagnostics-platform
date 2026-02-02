@@ -106,14 +106,27 @@ export function ModelUploadDialog({
     try {
       // Get presigned upload URL from API
       setUploading(true);
-      const uploadUrlResponse = await fetch("/api/models/upload-url", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-clerk-org-id": organization.id,
-        },
-        body: JSON.stringify({ fileName: file.name }),
-      });
+      
+      let uploadUrlResponse;
+      try {
+        uploadUrlResponse = await fetch("/api/models/upload-url", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-clerk-org-id": organization.id,
+          },
+          body: JSON.stringify({ fileName: file.name }),
+        });
+      } catch (fetchError) {
+        console.error("Fetch error:", fetchError);
+        throw new Error("Network error: Could not connect to server");
+      }
+
+      if (!uploadUrlResponse.ok) {
+        const errorText = await uploadUrlResponse.text();
+        console.error("Upload URL error:", uploadUrlResponse.status, errorText);
+        throw new Error(`Server error (${uploadUrlResponse.status}): ${errorText}`);
+      }
 
       const uploadUrlResult = await uploadUrlResponse.json();
       
@@ -124,16 +137,23 @@ export function ModelUploadDialog({
       const { uploadUrl, storageKey } = uploadUrlResult;
 
       // Upload to S3
-      const uploadResponse = await fetch(uploadUrl, {
-        method: "PUT",
-        body: file,
-        headers: {
-          "Content-Type": "application/zip",
-        },
-      });
+      let uploadResponse;
+      try {
+        uploadResponse = await fetch(uploadUrl, {
+          method: "PUT",
+          body: file,
+          headers: {
+            "Content-Type": "application/zip",
+          },
+        });
+      } catch (s3Error) {
+        console.error("S3 upload error:", s3Error);
+        throw new Error("Failed to upload to storage");
+      }
 
       if (!uploadResponse.ok) {
-        throw new Error("Failed to upload model bundle");
+        console.error("S3 response error:", uploadResponse.status);
+        throw new Error(`Storage upload failed (${uploadResponse.status})`);
       }
 
       setUploading(false);
