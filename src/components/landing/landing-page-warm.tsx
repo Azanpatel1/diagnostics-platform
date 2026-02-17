@@ -50,6 +50,9 @@ export function LandingPageWarm() {
       {/* Hero Section */}
       <main>
         <section className="container mx-auto px-6 pt-16 pb-12 text-center">
+          <p className="text-sm tracking-[0.3em] text-[#8B5E3C] uppercase mb-6">
+            Longevity
+          </p>
           <p className="text-lg text-[#7A6B5A] mb-4">
             You will spend <span className="font-bold text-[#5D4E37]">26 years</span> of your life sleeping.
           </p>
