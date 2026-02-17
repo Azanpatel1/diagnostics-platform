@@ -50,7 +50,7 @@ export function LandingPageWarm() {
       {/* Hero Section */}
       <main>
         <section className="container mx-auto px-6 pt-16 pb-12 text-center">
-          <p className="text-sm tracking-[0.3em] text-[#8B5E3C] uppercase mb-6">
+          <p className="text-3xl md:text-4xl tracking-[0.2em] text-[#8B5E3C] uppercase mb-8 font-serif">
             Longevity
           </p>
           <p className="text-lg text-[#7A6B5A] mb-4">
