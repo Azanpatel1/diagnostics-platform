@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { LandingPage } from "@/components/landing/landing-page";
+import { LandingPageSwitcher } from "@/components/landing/landing-page-switcher";
 
 export default async function HomePage() {
   const { userId } = await auth();
@@ -10,5 +10,5 @@ export default async function HomePage() {
     redirect("/dashboard");
   }
 
-  return <LandingPage />;
+  return <LandingPageSwitcher />;
 }
