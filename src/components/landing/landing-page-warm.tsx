@@ -4,14 +4,11 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
   Flame,
-  Droplets,
   Zap,
   Activity,
   Brain,
   ArrowRight,
   CheckCircle2,
-  Beaker,
-  Clock,
   Heart,
   Target,
   TrendingUp,
@@ -20,32 +17,6 @@ import {
 export function LandingPageWarm() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#F5EDE4] via-[#F8F2EC] to-[#FDF9F5]">
-      {/* Header */}
-      <header className="border-b border-[#D4C4B0]/30">
-        <div className="container mx-auto flex h-20 items-center justify-between px-6">
-          <Link href="/" className="flex items-center gap-3">
-            <span className="text-2xl font-serif tracking-wide text-[#5D4E37]">
-              Next <span className="font-normal">Diagnostics</span>
-              <sup className="text-xs">™</sup>
-            </span>
-          </Link>
-          <div className="flex items-center gap-4">
-            <Link href="/sign-in">
-              <Button 
-                variant="ghost" 
-                className="text-[#5D4E37] hover:text-[#3D2E1F] hover:bg-[#D4C4B0]/20"
-              >
-                Sign In
-              </Button>
-            </Link>
-            <Link href="/sign-up">
-              <Button className="bg-[#8B5E3C] hover:bg-[#6D4A2F] text-white">
-                Get Started
-              </Button>
-            </Link>
-          </div>
-        </div>
-      </header>
 
       {/* Hero Section */}
       <main>

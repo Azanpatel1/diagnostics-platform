@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ParticleNetwork } from "@/components/landing/particle-network";
-import { ThemeToggle } from "@/components/theme-toggle";
 import {
   FlaskConical,
   TestTubes,
@@ -21,26 +20,6 @@ export function LandingPage() {
       {/* Animated Background */}
       <ParticleNetwork />
 
-      {/* Header */}
-      <header className="relative z-10 border-b border-border/40 bg-background/60 backdrop-blur-xl">
-        <div className="container mx-auto flex h-16 items-center justify-between px-4">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <Dna className="h-5 w-5" />
-            </div>
-            <span className="text-xl font-bold">Diagnostics</span>
-          </Link>
-          <div className="flex items-center gap-4">
-            <ThemeToggle />
-            <Link href="/sign-in">
-              <Button variant="ghost">Sign In</Button>
-            </Link>
-            <Link href="/sign-up">
-              <Button>Get Started</Button>
-            </Link>
-          </div>
-        </div>
-      </header>
 
       {/* Hero Section */}
       <main className="relative z-10">
